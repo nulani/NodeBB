@@ -169,12 +169,17 @@ module.exports = function(Topics) {
 			function(next) {
 				Topics.getLatestUndeletedReply(tid, next);
 			},
-			function(pid, next) {
-				if (parseInt(pid, 10)) {
-					return callback(null, pid.toString());
-				}
-				Topics.getTopicField(tid, 'mainPid', next);
-			},
+                        function(pid, next) {
+                                // --- CR (6/28/15) --- This block of code invokes the callback early if a pid is passed.
+                                // This logic assumes that all pids passed at this point are replies to topics
+                                //and thus does not operate any further.
+                                // To allow all pids to be returned, we comment out this block and will filter on the tid later.
+                                // --- CR (6/28/15) ---
+                                //if (parseInt(pid, 10)) {
+                                //      return callback(null, pid.toString());
+                                //}
+                                Topics.getTopicField(tid, 'mainPid', next);
+                        },
 			function(mainPid, next) {
 				posts.getPostFields(mainPid, ['pid', 'deleted'], next);
 			},

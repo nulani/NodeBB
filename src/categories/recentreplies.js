@@ -160,7 +160,15 @@ module.exports = function(Categories) {
 						return callback(err);
 					}
 
-					pids = pids.concat(topicPids).filter(function(pid, index, array) {
+                                        // --- CR (7/1/15) ---
+                                        // Okay, so we're ommitting the first pid returned by this category.
+                                        // You can see this statement only loads one pid per category
+                                        //  db.getSortedSetRevRange('cid:' + category.cid + ':pids',0,0...
+                                        // and this pid is always the latest reply to a topic for the entire category.
+                                        // So we're going to omit it and simply use our topicPids only.
+                                        // --- CR (7/1/15) ---
+                                        //pids = pids.concat(topicPids).filter(function(pid, index, array) {
+                                        pids = topicPids.filter(function(pid, index, array) {
 						return !!pid && array.indexOf(pid) === index;
 					}).sort(function(a, b) {
 						return b - a;

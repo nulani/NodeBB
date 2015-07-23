@@ -59,10 +59,7 @@ module.exports = function(Topics) {
 				async.each(postData, function(post, next) {
 					post.user = users[post.uid];
 					post.timestamp = utils.toISOString(post.timestamp);
-					//Replace the tid only once with the first item returned by the database.
-					//This only ensures that the first post (reply) in the set is used and we are assuming the database will return the items in the correct order.
-					//tidToPost[post.tid] = post;
-					tidToPost[post.tid] = tidToPost[post.tid] || post;
+					tidToPost[post.tid] = post;
 					posts.parsePost(post, next);
 				}, function(err) {
 					if (err) {
@@ -76,8 +73,7 @@ module.exports = function(Topics) {
 							tidToPost[topic.tid].index = meta.config.teaserPost === 'first' ? 1 : counts[index];
 							if (tidToPost[topic.tid].content) {
 								var s = S(tidToPost[topic.tid].content);
-								//tidToPost[topic.tid].content = s.stripTags.apply(s, utils.stripTags).s;
-								tidToPost[topic.tid].content = 'kitty: ' + s.stripTags.apply(s, utils.stripTags).s;
+								tidToPost[topic.tid].content = s.stripTags.apply(s, utils.stripTags).s;
 							}
 						}
 						return tidToPost[topic.tid];

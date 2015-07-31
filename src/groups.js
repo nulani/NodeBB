@@ -115,32 +115,33 @@ var async = require('async'),
 		}
 
 		options.escape = options.hasOwnProperty('escape') ? options.escape : true;
+		var stop = -1;
 
 		async.parallel({
 			base: function (next) {
 				db.getObject('group:' + groupName, next);
 			},
-			owners: function (next) {
-				async.waterfall([
-					function(next) {
-						db.getSetMembers('group:' + groupName + ':owners', next);
-					},
-					function(uids, next) {
-						user.getUsers(uids, options.uid, next);
-					}
-				], next);
-			},
 			members: function (next) {
-				var stop = -1;
 				if (options.truncateUserList) {
 					stop = (parseInt(options.userListCount, 10) || 4) - 1;
 				}
-				user.getUsersFromSet('group:' + groupName + ':members', options.uid, 0, stop, next);
+
+				Groups.getOwnersAndMembers(groupName, options.uid, 0, stop, next);
 			},
 			pending: function (next) {
 				async.waterfall([
 					function(next) {
 						db.getSetMembers('group:' + groupName + ':pending', next);
+					},
+					function(uids, next) {
+						user.getUsersData(uids, next);
+					}
+				], next);
+			},
+			invited: function (next) {
+				async.waterfall([
+					function(next) {
+						db.getSetMembers('group:' + groupName + ':invited', next);
 					},
 					function(uids, next) {
 						user.getUsersData(uids, next);
@@ -164,19 +165,6 @@ var async = require('async'),
 				results.base['cover:position'] = '50% 50%';
 			}
 
-			var ownerUids = [];
-			results.owners.forEach(function(user) {
-				if (user) {
-					user.isOwner = true;
-					ownerUids.push(user.uid.toString());
-				}
-			});
-
-			results.members = results.members.filter(function(user, index, array) {
-				return user && user.uid && ownerUids.indexOf(user.uid.toString()) === -1;
-			});
-			results.members = results.owners.concat(results.members);
-
 			plugins.fireHook('filter:parse.raw', results.base.description, function(err, descriptionParsed) {
 				if (err) {
 					return callback(err);
@@ -190,7 +178,9 @@ var async = require('async'),
 				results.base.userTitleEnabled = results.base.userTitleEnabled ? !!parseInt(results.base.userTitleEnabled, 10) : true;
 				results.base.createtimeISO = utils.toISOString(results.base.createtime);
 				results.base.members = results.members;
+				results.base.membersNextStart = stop + 1;
 				results.base.pending = results.pending.filter(Boolean);
+				results.base.invited = results.invited.filter(Boolean);
 				results.base.deleted = !!parseInt(results.base.deleted, 10);
 				results.base.hidden = !!parseInt(results.base.hidden, 10);
 				results.base.system = !!parseInt(results.base.system, 10);
@@ -207,12 +197,49 @@ var async = require('async'),
 		});
 	};
 
+	Groups.getOwnersAndMembers = function(groupName, uid, start, stop, callback) {
+		async.parallel({
+			owners: function (next) {
+				async.waterfall([
+					function(next) {
+						db.getSetMembers('group:' + groupName + ':owners', next);
+					},
+					function(uids, next) {
+						user.getUsers(uids, uid, next);
+					}
+				], next);
+			},
+			members: function (next) {
+				user.getUsersFromSet('group:' + groupName + ':members', uid, start, stop, next);
+			}
+		}, function(err, results) {
+			if (err) {
+				return callback(err);
+			}
+
+			var ownerUids = [];
+			results.owners.forEach(function(user) {
+				if (user) {
+					user.isOwner = true;
+					ownerUids.push(user.uid.toString());
+				}
+			});
+
+			results.members = results.members.filter(function(user, index, array) {
+				return user && user.uid && ownerUids.indexOf(user.uid.toString()) === -1;
+			});
+			results.members = results.owners.concat(results.members);
+
+			callback(null, results.members);
+		});
+	};
+
 	Groups.escapeGroupData = function(group) {
 		if (group) {
 			group.nameEncoded = encodeURIComponent(group.name);
-			group.name = validator.escape(group.name);
+			group.displayName = validator.escape(group.name);
 			group.description = validator.escape(group.description);
-			group.userTitle = validator.escape(group.userTitle) || group.name;
+			group.userTitle = validator.escape(group.userTitle) || group.displayName;
 		}
 	};
 
@@ -345,13 +372,26 @@ var async = require('async'),
 			return callback(null, []);
 		}
 		var keys = groupNames.map(function(groupName) {
-			return 'group:' + groupName;
-		});
+				return 'group:' + groupName;
+			}),
+			ephemeralIdx = groupNames.reduce(function(memo, cur, idx) {
+				if (ephemeralGroups.indexOf(cur) !== -1) {
+					memo.push(idx);
+				}
+				return memo;
+			}, []);
 
 		db.getObjects(keys, function(err, groupData) {
 			if (err) {
 				return callback(err);
 			}
+
+			if (ephemeralIdx.length) {
+				ephemeralIdx.forEach(function(idx) {
+					groupData[idx] = internals.getEphemeralGroup(groupNames[idx]);
+				});
+			}
+
 			groupData.forEach(function(group) {
 				if (group) {
 					group.userTitle = validator.escape(group.userTitle) || validator.escape(group.name);

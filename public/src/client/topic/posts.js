@@ -13,7 +13,7 @@ define('forum/topic/posts', [
 	var Posts = {};
 
 	Posts.onNewPost = function(data) {
-		var tid = ajaxify.variables.get('topic_id');
+		var tid = ajaxify.data.tid;
 		if (data && data.posts && data.posts.length && parseInt(data.posts[0].tid, 10) !== parseInt(tid, 10)) {
 			return;
 		}
@@ -133,8 +133,11 @@ define('forum/topic/posts', [
 
 		findInsertionPoint();
 
-		data.title = $('<div></div>').text(ajaxify.variables.get('topic_name')).html();
-		data.viewcount = ajaxify.variables.get('viewcount');
+		data.title = $('<div></div>').text(ajaxify.data.title).html();
+		data.slug = ajaxify.data.slug;
+		data.viewcount = ajaxify.data.viewcount;
+
+		$(window).trigger('action:posts.loading', {posts: data.posts, after: after, before: before});
 
 		infinitescroll.parseAndTranslate('topic', 'posts', data, function(html) {
 			if (after) {
@@ -218,7 +221,7 @@ define('forum/topic/posts', [
 	};
 
 	function loadPostsAfter(after) {
-		var tid = ajaxify.variables.get('topic_id');
+		var tid = ajaxify.data.tid;
 		if (!utils.isNumber(tid) || !utils.isNumber(after) || (after === 0 && components.get('post', 'index', 1).length)) {
 			return;
 		}
@@ -274,7 +277,7 @@ define('forum/topic/posts', [
 	function hidePostToolsForDeletedPosts(posts) {
 		posts.each(function() {
 			if ($(this).hasClass('deleted')) {
-				postTools.toggle($(this).attr('data-pid'), true);	
+				postTools.toggle($(this).attr('data-pid'), true);
 			}
 		});
 	}

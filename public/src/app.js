@@ -92,7 +92,7 @@ app.cacheBuster = null;
 
 			switch(url_parts[0]) {
 				case 'user':
-					room = 'user/' + ajaxify.variables.get('theirid');
+					room = 'user/' + ajaxify.data.theirid;
 				break;
 				case 'topic':
 					room = 'topic_' + url_parts[1];
@@ -100,9 +100,14 @@ app.cacheBuster = null;
 				case 'category':
 					room = 'category_' + url_parts[1];
 				break;
-				case 'recent':	// intentional fall-through
+				case 'recent':
+					room = 'recent_topics';
+				break;
 				case 'unread':
-					room = 'recent_posts';
+					room = 'unread_topics';
+				break;
+				case 'popular':
+					room = 'popular_topics';
 				break;
 				case 'admin':
 					room = 'admin';
@@ -180,7 +185,8 @@ app.cacheBuster = null;
 				enter: room,
 				username: app.user.username,
 				userslug: app.user.userslug,
-				picture: app.user.picture
+				picture: app.user.picture,
+				status: app.user.status
 			}, function(err) {
 				if (err) {
 					app.alertError(err.message);
@@ -288,7 +294,10 @@ app.cacheBuster = null;
 			}
 
 			if (!chat.modalExists(touid)) {
-				chat.createModal(username, touid, loadAndCenter);
+				chat.createModal({
+					username: username,
+					touid: touid
+				}, loadAndCenter);
 			} else {
 				loadAndCenter(chat.getModal(touid));
 			}
@@ -446,6 +455,7 @@ app.cacheBuster = null;
 					return app.alertError(err.message);
 				}
 				$('#logged-in-menu #user_label #user-profile-link>i').attr('class', 'fa fa-circle status ' + status);
+				app.user.status = status;
 			});
 			e.preventDefault();
 		});
@@ -466,21 +476,23 @@ app.cacheBuster = null;
 
 	function handleNewTopic() {
 		$('#content').on('click', '#new_topic', function() {
-			require(['composer'], function(composer) {
-				var cid = ajaxify.variables.get('category_id');
-				if (cid) {
-					composer.newTopic(cid);
-				} else {
-					socket.emit('categories.getCategoriesByPrivilege', 'topics:create', function(err, categories) {
-						if (err) {
-							return app.alertError(err.message);
-						}
-						if (categories.length) {
-							composer.newTopic(categories[0].cid);
-						}
-					});
-				}
-			});
+			var cid = ajaxify.data.cid;
+			if (cid) {
+				$(window).trigger('action:composer.topic.new', {
+					cid: cid
+				});
+			} else {
+				socket.emit('categories.getCategoriesByPrivilege', 'topics:create', function(err, categories) {
+					if (err) {
+						return app.alertError(err.message);
+					}
+					if (categories.length) {
+						$(window).trigger('action:composer.topic.new', {
+							cid: categories[0].cid
+						});
+					}
+				});
+			}
 		});
 	}
 
@@ -538,6 +550,8 @@ app.cacheBuster = null;
 
 				// templates.js helpers
 				helpers.register();
+
+				$(window).trigger('action:app.load');
 			});
 		});
 	};
@@ -601,5 +615,4 @@ app.cacheBuster = null;
 	});
 
 	app.alternatingTitle('');
-
 }());

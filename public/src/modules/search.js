@@ -11,7 +11,7 @@ define('search', ['navigator', 'translator'], function(nav, translator) {
 		var term = data.term;
 
 		// Detect if a tid was specified
-		var topicSearch = term.match(/in:topic-([\d]+)/);
+		var topicSearch = term.match(/^in:topic-([\d]+) /);
 
 		if (!topicSearch) {
 			term = term.replace(/^[ ?#]*/, '');
@@ -28,7 +28,9 @@ define('search', ['navigator', 'translator'], function(nav, translator) {
 			var cleanedTerm = term.replace(topicSearch[0], ''),
 				tid = topicSearch[1];
 
-			Search.queryTopic(tid, cleanedTerm, callback);
+			if (cleanedTerm.length > 0) {
+				Search.queryTopic(tid, cleanedTerm, callback);
+			}
 		}
 	};
 
@@ -96,7 +98,7 @@ define('search', ['navigator', 'translator'], function(nav, translator) {
 	};
 
 	Search.checkPagePresence = function(tid, callback) {
-		if (parseInt(ajaxify.variables.get('topic_id'), 10) !== parseInt(tid, 10)) {
+		if (parseInt(ajaxify.data.tid, 10) !== parseInt(tid, 10)) {
 			ajaxify.go('topic/' + tid, callback);
 		} else {
 			callback();

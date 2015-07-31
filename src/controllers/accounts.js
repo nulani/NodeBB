@@ -90,6 +90,7 @@ function getUserDataByUserSlug(userslug, callerUID, callback) {
 			userData.status = require('../socket.io').isUserOnline(userData.uid) ? (userData.status || 'online') : 'offline';
 			userData.banned = parseInt(userData.banned, 10) === 1;
 			userData.website = validator.escape(userData.website);
+			userData.websiteLink = !userData.website.startsWith('http') ? 'http://' + userData.website : userData.website;
 			userData.websiteName = userData.website.replace(validator.escape('http://'), '').replace(validator.escape('https://'), '');
 			userData.followingCount = parseInt(userData.followingCount, 10) || 0;
 			userData.followerCount = parseInt(userData.followerCount, 10) || 0;
@@ -489,6 +490,13 @@ accountsController.getChats = function(req, res, next) {
 	if (parseInt(meta.config.disableChat) === 1) {
 		return helpers.notFound(req, res);
 	}
+
+	// In case a userNAME is passed in instead of a slug, the route should not 404
+	var slugified = utils.slugify(req.params.userslug);
+	if (req.params.userslug && req.params.userslug !== slugified) {
+		return res.redirect(nconf.get('relative_path') + '/chats/' + slugified);
+	}
+
 	async.parallel({
 		contacts: async.apply(user.getFollowing, req.user.uid, 0, 19),
 		recentChats: async.apply(messaging.getRecentChats, req.user.uid, 0, 19)

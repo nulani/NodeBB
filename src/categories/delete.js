@@ -31,14 +31,48 @@ module.exports = function(Categories) {
 				db.sortedSetRemove('categories:cid', cid, next);
 			},
 			function(next) {
+				removeFromParent(cid, next);
+			},
+			function(next) {
 				db.deleteAll([
 					'cid:' + cid + ':tids',
 					'cid:' + cid + ':tids:posts',
 					'cid:' + cid + ':pids',
 					'cid:' + cid + ':read_by_uid',
+					'cid:' + cid + ':children',
 					'category:' + cid
 				], next);
 			}
 		], callback);
+	}
+
+	function removeFromParent(cid, callback) {
+		async.waterfall([
+			function(next) {
+				async.parallel({
+					parentCid: function(next) {
+						Categories.getCategoryField(cid, 'parentCid', next);
+					},
+					children: function(next) {
+						db.getSortedSetRange('cid:' + cid + ':children', 0, -1, next);
+					}
+				}, next);
+			},
+			function(results, next) {
+				async.parallel([
+					function(next) {
+						results.parentCid = parseInt(results.parentCid, 10) || 0;
+						db.sortedSetRemove('cid:' + results.parentCid + ':children', cid, next);
+					},
+					function(next) {
+						async.each(results.children, function(cid, next) {
+							db.setObjectField('category:' + cid, 'parentCid', 0, next);
+						}, next);
+					}
+				], next);
+			}
+		], function(err, results) {
+			callback(err);
+		});
 	}
 };

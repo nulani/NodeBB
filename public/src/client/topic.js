@@ -116,33 +116,47 @@ define('forum/topic', [
 	};
 
 	function handleBookmark(tid) {
-		var bookmark = localStorage.getItem('topic:' + tid + ':bookmark');
+		// use the user's bookmark data if available, fallback to local if available
+		var bookmark = ajaxify.data.bookmark || localStorage.getItem('topic:' + tid + ':bookmark');
 		var postIndex = getPostIndex();
 
 		if (postIndex && window.location.search.indexOf('page=') === -1) {
-			navigator.scrollToPost(postIndex - 1, true);
-		} else if (bookmark && (!config.usePagination || (config.usePagination && pagination.currentPage === 1)) && ajaxify.data.postcount > 1) {
+			if (components.get('post/anchor', postIndex).length) {
+				return navigator.scrollToPostIndex(postIndex, true);
+			}
+		} else if (bookmark && (!config.usePagination || (config.usePagination && pagination.currentPage === 1)) && ajaxify.data.postcount > 10) {
 			app.alert({
 				alert_id: 'bookmark',
 				message: '[[topic:bookmark_instructions]]',
 				timeout: 0,
 				type: 'info',
 				clickfn : function() {
-					navigator.scrollToPost(parseInt(bookmark, 10), true);
+					navigator.scrollToPost(parseInt(bookmark - 1, 10), true);
 				},
 				closefn : function() {
 					localStorage.removeItem('topic:' + tid + ':bookmark');
 				}
 			});
+			setTimeout(function() {
+				app.removeAlert('bookmark');
+			}, 10000);
 		}
 	}
 
 	function getPostIndex() {
 		var parts = window.location.pathname.split('/');
-		if (parts[parts.length - 1] && utils.isNumber(parts[parts.length - 1])) {
-			return parseInt(parts[parts.length - 1], 10);
+		var lastPart = parts[parts.length - 1];
+		if (lastPart && utils.isNumber(lastPart)) {
+			lastPart = Math.max(0, parseInt(lastPart, 10) - 1);
+		} else {
+			return 0;
 		}
-		return 0;
+
+		while (lastPart > 0 && !components.get('post/anchor', lastPart).length) {
+			lastPart --;
+		}
+
+		return lastPart;
 	}
 
 	function addBlockQuoteHandler() {
@@ -173,6 +187,7 @@ define('forum/topic', [
 		} else {
 			components.get('navbar/title').find('span').text('').hide();
 		}
+		app.removeAlert('bookmark');
 	}
 
 	Topic.calculateIndex = function(index, elementCount) {
@@ -197,10 +212,28 @@ define('forum/topic', [
 			}
 		}
 
-		var currentBookmark = localStorage.getItem('topic:' + ajaxify.data.tid + ':bookmark');
+		var bookmarkKey = 'topic:' + ajaxify.data.tid + ':bookmark';
+		var currentBookmark = ajaxify.data.bookmark || localStorage.getItem(bookmarkKey);
 
+		if (!currentBookmark || parseInt(postIndex, 10) > parseInt(currentBookmark, 10)) {
+			if (app.user.uid) {
+				var payload = {
+					'tid': ajaxify.data.tid,
+					'index': postIndex
+				};
+				socket.emit('topics.bookmark', payload, function(err) {
+					if (err) {
+						console.warn('Error saving bookmark:', err);
+					}
+					ajaxify.data.bookmark = postIndex;
+				});
+			} else {
+				localStorage.setItem(bookmarkKey, postIndex);
+			}
+		}
+
+		// removes the bookmark alert when we get to / past the bookmark
 		if (!currentBookmark || parseInt(postIndex, 10) >= parseInt(currentBookmark, 10)) {
-			localStorage.setItem('topic:' + ajaxify.data.tid + ':bookmark', postIndex);
 			app.removeAlert('bookmark');
 		}
 

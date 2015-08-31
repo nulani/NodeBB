@@ -105,8 +105,8 @@ var async = require('async'),
 		}
 	};
 
-	Groups.getGroups = function(start, stop, callback) {
-		db.getSortedSetRevRange('groups:createtime', start, stop, callback);
+	Groups.getGroups = function(set, start, stop, callback) {
+		db.getSortedSetRevRange(set, start, stop, callback);
 	};
 
 	Groups.get = function(groupName, options, callback) {
@@ -296,11 +296,10 @@ var async = require('async'),
 	Groups.isHidden = function(groupName, callback) {
 		Groups.getGroupFields(groupName, ['hidden'], function(err, values) {
 			if (err) {
-				winston.warn('[groups.isHidden] Could not determine group hidden state (group: ' + groupName + ')');
-				return callback(null, true);	// Default true
+				return callback(err);
 			}
 
-			callback(null, parseInt(values.hidden, 10));
+			callback(null, parseInt(values.hidden, 10) === 1);
 		});
 	};
 

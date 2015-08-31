@@ -30,15 +30,15 @@ $(document).ready(function() {
 
 	ajaxify.currentPage = null;
 
-	ajaxify.go = function (url, callback, quiet, search) {
+	ajaxify.go = function (url, callback, quiet) {
 		if (!socket.connected) {
 			if (ajaxify.reconnectAction) {
 				$(window).off('action:reconnected', ajaxify.reconnectAction);
 			}
 			ajaxify.reconnectAction = function(e) {
-				ajaxify.go(url, callback, quiet, search);
+				ajaxify.go(url, callback, quiet);
 				$(window).off(e);
-			}
+			};
 			$(window).on('action:reconnected', ajaxify.reconnectAction);
 		}
 
@@ -54,11 +54,10 @@ $(document).ready(function() {
 			apiXHR.abort();
 		}
 
-		url = ajaxify.start(url, quiet, search);
+		url = ajaxify.start(url, quiet);
 
 		$('#footer, #content').removeClass('hide').addClass('ajaxifying');
 
-		ajaxify.variables.flush();
 		ajaxify.loadData(url, function(err, data) {
 			if (err) {
 				return onAjaxError(err, url, callback, quiet);
@@ -87,10 +86,8 @@ $(document).ready(function() {
 	};
 
 
-	ajaxify.start = function(url, quiet, search) {
+	ajaxify.start = function(url, quiet) {
 		url = ajaxify.removeRelativePath(url.replace(/^\/|\/$/g, ''));
-		var hash = window.location.hash;
-		search = search || '';
 
 		$(window).trigger('action:ajaxify.start', {url: url});
 
@@ -102,8 +99,8 @@ $(document).ready(function() {
 
 		if (window.history && window.history.pushState) {
 			window.history[!quiet ? 'pushState' : 'replaceState']({
-				url: url + search + hash
-			}, url, RELATIVE_PATH + '/' + url + search + hash);
+				url: url
+			}, url, RELATIVE_PATH + '/' + url);
 		}
 		return url;
 	};
@@ -113,14 +110,15 @@ $(document).ready(function() {
 			textStatus = err.textStatus;
 
 		if (data) {
+			data.responseJSON.config = config;
 			var status = parseInt(data.status, 10);
-			if (status === 403 || status === 404 || status === 500 || status === 502) {
+			if (status === 403 || status === 404 || status === 500 || status === 502 || status === 503) {
 				if (status === 502) {
 					status = 500;
 				}
 
 				$('#footer, #content').removeClass('hide').addClass('ajaxifying');
-				return renderTemplate(url, status.toString(), data.responseJSON, (new Date()).getTime(), callback);
+				return renderTemplate(url, status.toString(), data.responseJSON, callback);
 			} else if (status === 401) {
 				app.alertError('[[global:please_log_in]]');
 				app.previousUrl = url;
@@ -152,7 +150,7 @@ $(document).ready(function() {
 
 				$('#content, #footer').removeClass('ajaxifying');
 
-				app.refreshTitle(url);
+				app.refreshTitle(data.title);
 			});
 		});
 	}
@@ -217,8 +215,10 @@ $(document).ready(function() {
 				if (!data) {
 					return;
 				}
+
 				ajaxify.data = data;
-				data.relative_path = RELATIVE_PATH;
+				data.config = config;
+
 				$(window).trigger('action:ajaxify.dataLoaded', {url: url, data: data});
 
 				if (callback) {
@@ -255,8 +255,6 @@ $(document).ready(function() {
 	};
 
 	function ajaxifyAnchors() {
-		templates.registerLoader(ajaxify.loadTemplate);
-
 		function hrefEmpty(href) {
 			return href === undefined || href === '' || href === 'javascript:;';
 		}
@@ -282,7 +280,6 @@ $(document).ready(function() {
 					if (window.location.pathname === this.pathname && this.hash.length) {
 						window.location.hash = this.hash;
 					} else {
-						window.location.hash = '';
 						if (ajaxify.go(pathname)) {
 							e.preventDefault();
 						}
@@ -300,6 +297,8 @@ $(document).ready(function() {
 			}
 		});
 	}
+
+	templates.registerLoader(ajaxify.loadTemplate);
 
 	if (window.history && window.history.pushState) {
 		// Progressive Enhancement, ajaxify available only to modern browsers

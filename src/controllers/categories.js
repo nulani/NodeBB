@@ -9,64 +9,12 @@ var categoriesController = {},
 	privileges = require('../privileges'),
 	user = require('../user'),
 	categories = require('../categories'),
-	topics = require('../topics'),
 	meta = require('../meta'),
 	plugins = require('../plugins'),
 	pagination = require('../pagination'),
 	helpers = require('./helpers'),
 	utils = require('../../public/src/utils');
 
-categoriesController.recent = function(req, res, next) {
-	var stop = (parseInt(meta.config.topicsPerList, 10) || 20) - 1;
-	topics.getTopicsFromSet('topics:recent', req.uid, 0, stop, function(err, data) {
-		if (err) {
-			return next(err);
-		}
-
-		data['feeds:disableRSS'] = parseInt(meta.config['feeds:disableRSS'], 10) === 1;
-		data.rssFeedUrl = nconf.get('relative_path') + '/recent.rss';
-		data.breadcrumbs = helpers.buildBreadcrumbs([{text: '[[recent:title]]'}]);
-		res.render('recent', data);
-	});
-};
-
-var anonCache = {}, lastUpdateTime = 0;
-
-categoriesController.popular = function(req, res, next) {
-	var terms = {
-		daily: 'day',
-		weekly: 'week',
-		monthly: 'month',
-		alltime: 'alltime'
-	};
-	var term = terms[req.params.term] || 'day';
-
-	if (!req.uid) {
-		if (anonCache[term] && (Date.now() - lastUpdateTime) < 60 * 60 * 1000) {
-			return res.render('popular', anonCache[term]);
-		}
-	}
-
-	topics.getPopular(term, req.uid, meta.config.topicsPerList, function(err, topics) {
-		if (err) {
-			return next(err);
-		}
-
-		var data = {
-			topics: topics,
-			'feeds:disableRSS': parseInt(meta.config['feeds:disableRSS'], 10) === 1,
-			rssFeedUrl: nconf.get('relative_path') + '/popular/' + (req.params.term || 'daily') + '.rss',
-			breadcrumbs: helpers.buildBreadcrumbs([{text: '[[global:header.popular]]'}])
-		};
-
-		if (!req.uid) {
-			anonCache[term] = data;
-			lastUpdateTime = Date.now();
-		}
-
-		res.render('popular', data);
-	});
-};
 
 categoriesController.list = function(req, res, next) {
 	async.parallel({
@@ -79,13 +27,13 @@ categoriesController.list = function(req, res, next) {
 				content: validator.escape(meta.config.description || '')
 			}, {
 				property: 'og:title',
-				content: 'Index | ' + validator.escape(meta.config.title || 'NodeBB')
+				content: '[[pages:categories]]'
 			}, {
 				property: 'og:type',
 				content: 'website'
 			}];
 
-			if(meta.config['brand:logo']) {
+			if (meta.config['brand:logo']) {
 				res.locals.metaTags.push({
 					property: 'og:image',
 					content: meta.config['brand:logo']
@@ -98,22 +46,13 @@ categoriesController.list = function(req, res, next) {
 			var categoryData;
 			async.waterfall([
 				function(next) {
-					categories.getCategoriesByPrivilege(req.uid, 'find', next);
+					categories.getCategoriesByPrivilege('cid:0:children', req.uid, 'find', next);
 				},
 				function(_categoryData, next) {
 					categoryData = _categoryData;
+
 					var allCategories = [];
-
-					categoryData = categoryData.filter(function(category) {
-						if (!category.parent) {
-							allCategories.push(category);
-						}
-
-						if (Array.isArray(category.children) && category.children.length) {
-							allCategories.push.apply(allCategories, category.children);
-						}
-						return category && !category.parent;
-					});
+					categories.flattenCategories(allCategories, categoryData);
 
 					categories.getRecentTopicReplies(allCategories, req.uid, next);
 				}
@@ -126,6 +65,8 @@ categoriesController.list = function(req, res, next) {
 			return next(err);
 		}
 
+		data.title = '[[pages:categories]]';
+
 		plugins.fireHook('filter:categories.build', {req: req, res: res, templateData: data}, function(err, data) {
 			if (err) {
 				return next(err);
@@ -135,13 +76,13 @@ categoriesController.list = function(req, res, next) {
 	});
 };
 
-categoriesController.get = function(req, res, next) {
+categoriesController.get = function(req, res, callback) {
 	var cid = req.params.category_id,
 		page = parseInt(req.query.page, 10) || 1,
 		userPrivileges;
 
 	if ((req.params.topic_index && !utils.isNumber(req.params.topic_index)) || !utils.isNumber(cid)) {
-		return helpers.notFound(req, res);
+		return callback();
 	}
 
 	async.waterfall([
@@ -165,7 +106,7 @@ categoriesController.get = function(req, res, next) {
 			userPrivileges = results.privileges;
 
 			if (!results.exists || (results.categoryData && parseInt(results.categoryData.disabled, 10) === 1)) {
-				return helpers.notFound(req, res);
+				return callback();
 			}
 
 			if (!results.privileges.read) {
@@ -186,7 +127,7 @@ categoriesController.get = function(req, res, next) {
 			}
 
 			if (settings.usePagination && (page < 1 || page > pageCount)) {
-				return helpers.notFound(req, res);
+				return callback();
 			}
 
 			if (!settings.usePagination) {
@@ -252,7 +193,9 @@ categoriesController.get = function(req, res, next) {
 			});
 		},
 		function(categoryData, next) {
-			categories.getRecentTopicReplies(categoryData.children, req.uid, function(err) {
+			var allCategories = [];
+			categories.flattenCategories(allCategories, [categoryData]);
+			categories.getRecentTopicReplies(allCategories, req.uid, function(err) {
 				next(err, categoryData);
 			});
 		},
@@ -302,21 +245,21 @@ categoriesController.get = function(req, res, next) {
 		}
 	], function (err, data) {
 		if (err) {
-			return next(err);
+			return callback(err);
 		}
 
 		data.currentPage = page;
 		data['feeds:disableRSS'] = parseInt(meta.config['feeds:disableRSS'], 10) === 1;
 		data.rssFeedUrl = nconf.get('relative_path') + '/category/' + data.cid + '.rss';
 		data.pagination = pagination.create(data.currentPage, data.pageCount);
-
+		data.title = data.name;
 		data.pagination.rel.forEach(function(rel) {
 			res.locals.linkTags.push(rel);
 		});
 
 		plugins.fireHook('filter:category.build', {req: req, res: res, templateData: data}, function(err, data) {
 			if (err) {
-				return next(err);
+				return callback(err);
 			}
 			res.render('category', data.templateData);
 		});
